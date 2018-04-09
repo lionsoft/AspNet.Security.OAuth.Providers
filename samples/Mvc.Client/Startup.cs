@@ -4,6 +4,7 @@
  * for more information concerning the license and the contributors participating to this project.
  */
 
+using AspNet.Security.OAuth.BankId;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +24,14 @@ namespace Mvc.Client
             {
                 options.LoginPath = "/login";
                 options.LogoutPath = "/signout";
+            })
+
+            .AddBankId(options =>
+            {
+                options.ClientId = "7c421c90-1818-4e5c-b20f-7a83d6940102";
+                options.ClientSecret = "Mjg1OGJmYWYtZjZiNC00YTJiLTk5YzAtOTY3MzUxMjM3ZWJk";
+                //options.IsSandBox = true;
+                options.CertificateFileName = "D:\\Dropbox\\Sync\\OblRada\\rsa_key.pfx";
             })
 
             .AddGoogle(options =>
