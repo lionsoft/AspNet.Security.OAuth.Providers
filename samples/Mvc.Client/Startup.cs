@@ -25,6 +25,14 @@ namespace Mvc.Client
                 options.LogoutPath = "/signout";
             })
 
+            .AddEHealth(options =>
+            {
+                options.ClientId = "2940f64b-bcc2-42b0-bb32-48e2deea33b4";
+                options.ClientSecret = "UUdYTUVtOStrZEh1RUVUaWRxTDdDZz09";
+                options.RedirectUri = "http://onko.mdsoft.com.ua";
+                options.SaveTokens = true;
+            })
+
             .AddGoogle(options =>
             {
                 options.ClientId = "560027070069-37ldt4kfuohhu3m495hk2j4pjp92d382.apps.googleusercontent.com";
