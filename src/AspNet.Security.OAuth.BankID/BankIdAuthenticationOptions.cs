@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
  * See https://github.com/aspnet-contrib/AspNet.Security.OAuth.Providers
  * for more information concerning the license and the contributors participating to this project.
@@ -29,14 +29,18 @@ namespace AspNet.Security.OAuth.BankId
             IsSandBox = false;
             ClaimActions.MapCustomJson(ClaimTypes.NameIdentifier, user => Decode(user["customer"]["clId"]));
             ClaimActions.MapCustomJson(ClaimTypes.Name, user => $"{Decode(user["customer"]["lastName"])} {Decode(user["customer"]["firstName"])} {Decode(user["customer"]["middleName"])}".Trim());
+            ClaimActions.MapCustomJson(ClaimTypes.GivenName, user => Decode(user["customer"]["firstName"]));
+            ClaimActions.MapCustomJson(ClaimTypes.Surname, user => Decode(user["customer"]["lastName"]));
             ClaimActions.MapCustomJson(ClaimTypes.Email, user => Decode(user["customer"]["email"]));
             ClaimActions.MapCustomJson(ClaimTypes.MobilePhone, user => Decode(user["customer"]["phone"]));
             ClaimActions.MapCustomJson(ClaimTypes.DateOfBirth, user => Decode(user["customer"]["birthDay"]));
+            ClaimActions.MapCustomJson(ClaimTypes.Gender, user => Decode(user["customer"]["sex"]));
             ClaimActions.MapCustomJson("urn:BankId:clIdText", user => Decode(user["customer"]["clIdText"]));
             ClaimActions.MapCustomJson("urn:BankId:lastName", user => Decode(user["customer"]["lastName"]));
             ClaimActions.MapCustomJson("urn:BankId:firstName", user => Decode(user["customer"]["firstName"]));
             ClaimActions.MapCustomJson("urn:BankId:middleName", user => Decode(user["customer"]["middleName"]));
-            ClaimActions.MapCustomJson("urn:BankId:sex", user => Decode(user["customer"]["sex"]));
+            ClaimActions.MapCustomJson("urn:BankId:inn", user => Decode(user["customer"]["inn"]));
+            ClaimActions.MapCustomJson("urn:BankId:edrpou", user => Decode(user["customer"]["edrpou"]));
             ClaimActions.MapCustomJson("urn:BankId:resident", user => Decode(user["customer"]["resident"]));
             ClaimActions.MapCustomJson("urn:BankId:dateModification", user => Decode(user["customer"]["dateModification"]));
         }

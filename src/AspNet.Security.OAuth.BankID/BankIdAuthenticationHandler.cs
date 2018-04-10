@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0)
  * See https://github.com/aspnet-contrib/AspNet.Security.OAuth.Providers
  * for more information concerning the license and the contributors participating to this project.
@@ -37,6 +37,26 @@ namespace AspNet.Security.OAuth.BankId
         {
         }
 
+        private static string MakeBankIdClientSecret(string clientId, string clientSecret, string code)
+        {
+            var res = clientId + clientSecret + code;
+            var hash = new SHA1Managed().ComputeHash(Encoding.UTF8.GetBytes(res));
+            res = string.Join("", hash.Select(b => b.ToString("x2")).ToArray());
+            return res;
+        }
+
+        public StringContent ToJsonContent(object body) => body == null ? null : new StringContent(JObject.FromObject(body).ToString(), Encoding.UTF8, "application/json");
+
+        private static async Task<string> Display(HttpResponseMessage response)
+        {
+            var output = new StringBuilder();
+            output.Append("Status: " + response.StatusCode + ";");
+            output.Append("Headers: " + response.Headers + ";");
+            output.Append("Body: " + await response.Content.ReadAsStringAsync() + ";");
+            return output.ToString();
+        }
+
+        /// <inheritdoc />
         protected override string BuildChallengeUrl(AuthenticationProperties properties, string redirectUri)
         {
             return QueryHelpers.AddQueryString(Options.AuthorizationEndpoint, new Dictionary<string, string>
@@ -101,30 +121,14 @@ namespace AspNet.Security.OAuth.BankId
                 : HandleRequestResult.Success(ticketAsync);
         }
 
-        private static async Task<string> Display(HttpResponseMessage response)
-        {
-            var output = new StringBuilder();
-            output.Append("Status: " + response.StatusCode + ";");
-            output.Append("Headers: " + response.Headers + ";");
-            output.Append("Body: " + await response.Content.ReadAsStringAsync() + ";");
-            return output.ToString();
-        }
-
-        private static string MakeBankIDClientSecret(string clientId, string clientSecret, string code)
-        {
-            var res = clientId + clientSecret + code;
-            var hash = new SHA1Managed().ComputeHash(Encoding.UTF8.GetBytes(res));
-            res = string.Join("", hash.Select(b => b.ToString("x2")).ToArray());
-            return res;
-        }
-
+        /// <inheritdoc />
         protected override async Task<OAuthTokenResponse> ExchangeCodeAsync(string code, string redirectUri)
         {
             var address = QueryHelpers.AddQueryString(Options.TokenEndpoint, new Dictionary<string, string>
             {
                 { "grant_type", "authorization_code" },
                 { "client_id", Options.ClientId },
-                { "client_secret", MakeBankIDClientSecret(Options.ClientId, Options.ClientSecret, code) },
+                { "client_secret", MakeBankIdClientSecret(Options.ClientId, Options.ClientSecret, code) },
                 { nameof (code), code },
                 { "redirect_uri", redirectUri },
             });
@@ -138,8 +142,7 @@ namespace AspNet.Security.OAuth.BankId
                 : OAuthTokenResponse.Failed(new Exception("OAuth token endpoint failure: " + await Display(response)));
         }
 
-        public StringContent ToJsonContent(object body) => body == null ? null : new StringContent(JObject.FromObject(body).ToString(), Encoding.UTF8, "application/json");
-
+        /// <inheritdoc />
         protected override async Task<AuthenticationTicket> CreateTicketAsync([NotNull] ClaimsIdentity identity,
             [NotNull] AuthenticationProperties properties, [NotNull] OAuthTokenResponse tokens)
         {

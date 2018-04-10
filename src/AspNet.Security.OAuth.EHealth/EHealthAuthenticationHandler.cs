@@ -20,7 +20,6 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace AspNet.Security.OAuth.EHealth
@@ -36,51 +35,7 @@ namespace AspNet.Security.OAuth.EHealth
         {
         }
 
-        protected async Task<AuthenticationTicket> CreateTicketAsync([NotNull] ClaimsIdentity identity,
-            [NotNull] AuthenticationProperties properties, [NotNull] EHealthOAuthTokenResponse tokens)
-        {
-/*
-            var address = QueryHelpers.AddQueryString(Options.UserInformationEndpoint, "access_token", tokens.AccessToken);
-
-            if (Options.Scopes.Count != 0)
-            {
-                address = QueryHelpers.AddQueryString(address, "scope", string.Join(" ", Options.Scopes));
-            }
-
-            var response = await Backchannel.GetAsync(address, Context.RequestAborted);
-            if (!response.IsSuccessStatusCode)
-            {
-                Logger.LogError("An error occurred while retrieving the user profile: the remote server " +
-                                "returned a {Status} response with the following payload: {Headers} {Body}.",
-                                /* Status: #1# response.StatusCode,
-                                /* Headers: #1# response.Headers.ToString(),
-                                /* Body: #1# await response.Content.ReadAsStringAsync());
-
-                throw new HttpRequestException("An error occurred while retrieving the user profile.");
-            }
-
-            var container = JObject.Parse(await response.Content.ReadAsStringAsync());
-            var payload = container["response"].First as JObject;
-*/
-
-            var payload = tokens.Response.Response;
-            var principal = new ClaimsPrincipal(identity);
-            var context = new EHealthOAuthCreatingTicketContext(principal, properties, Context, Scheme, Options, Backchannel, tokens, payload);
-            context.RunClaimActions(payload);
-
-            //!!!await Options.Events.CreatingTicket(context);
-            return await Task.FromResult(new AuthenticationTicket(context.Principal, context.Properties, Scheme.Name));
-        }
-
-        protected override string BuildChallengeUrl(AuthenticationProperties properties, string redirectUri)
-        {
-            return base.BuildChallengeUrl(properties, redirectUri);
-        }
-
-        protected override Task<AuthenticateResult> HandleAuthenticateAsync()
-        {
-            return base.HandleAuthenticateAsync();
-        }
+        public StringContent ToJsonContent(object body) => body == null ? null : new StringContent(JObject.FromObject(body).ToString(), Encoding.UTF8, "application/json");
 
         private static async Task<string> Display(HttpResponseMessage response)
         {
@@ -91,37 +46,10 @@ namespace AspNet.Security.OAuth.EHealth
             return output.ToString();
         }
 
-        protected new async Task<EHealthOAuthTokenResponse> ExchangeCodeAsync(string code, string redirectUri)
-        {
-            var oauthHandler = this;
-            var content = JsonConvert.SerializeObject(new
-            {
-                token = new {
-                    grant_type = "authorization_code",
-                    code,
-                    client_id = oauthHandler.Options.ClientId,
-                    client_secret = oauthHandler.Options.ClientSecret,
-                    redirect_uri = redirectUri,
-                    scope = string.Join(" ", oauthHandler.Options.Scopes)
-                }
-            }, Formatting.None);
-            var urlEncodedContent = new StringContent(content, Encoding.UTF8, "application/json");
-            var response = await oauthHandler.Backchannel.SendAsync(
-                new HttpRequestMessage(HttpMethod.Post, oauthHandler.Options.TokenEndpoint)
-                {
-                    Headers = { Accept = { new MediaTypeWithQualityHeaderValue("application/json") } },
-                    Content = urlEncodedContent
-                }, 
-                oauthHandler.Context.RequestAborted);
-            return response.IsSuccessStatusCode
-                ? EHealthOAuthTokenResponse.Success(JObject.Parse(await response.Content.ReadAsStringAsync()))
-                : EHealthOAuthTokenResponse.Failed(new Exception("OAuth token endpoint failure: " + await Display(response)));
-        }
-
+        /// <inheritdoc />
         protected override async Task<HandleRequestResult> HandleRemoteAuthenticateAsync()
         {
-            var oauthHandler = this;
-            var query = oauthHandler.Request.Query;
+            var query = Request.Query;
             var error = query["error"];
             if (!StringValues.IsNullOrEmpty(error))
             {
@@ -137,53 +65,173 @@ namespace AspNet.Security.OAuth.EHealth
             }
             var code = query["code"];
             var state = query["state"];
-            var properties = oauthHandler.Options.StateDataFormat.Unprotect(state) ?? new AuthenticationProperties();
+            var properties = Options.StateDataFormat.Unprotect(state) ?? new AuthenticationProperties();
 
             if (StringValues.IsNullOrEmpty(code))
                 return HandleRequestResult.Fail("Code was not found.");
-            var tokens = await oauthHandler.ExchangeCodeAsync(code, oauthHandler.BuildRedirectUri(oauthHandler.Options.CallbackPath));
+            var tok = await ExchangeCodeAsync(code, BuildRedirectUri(Options.CallbackPath));
+            var tokens = EHealthOAuthTokenResponse.Success(tok.Response);
             if (tokens.Error != null)
                 return HandleRequestResult.Fail(tokens.Error);
             if (string.IsNullOrEmpty(tokens.AccessToken))
                 return HandleRequestResult.Fail("Failed to retrieve access token.");
-            var identity = new ClaimsIdentity(oauthHandler.ClaimsIssuer);
-            if (oauthHandler.Options.SaveTokens)
+            var identity = new ClaimsIdentity(ClaimsIssuer);
+            if (Options.SaveTokens)
             {
-                var authenticationTokenList1 = new List<AuthenticationToken>();
-                var authenticationTokenList2 = authenticationTokenList1;
-                var authenticationToken1 = new AuthenticationToken {Name = "access_token"};
-                var accessToken = tokens.AccessToken;
-                authenticationToken1.Value = accessToken;
-                authenticationTokenList2.Add(authenticationToken1);
+                var authenticationTokenList = new List<AuthenticationToken>
+                {
+                    new AuthenticationToken { Name = "access_token", Value = tokens.AccessToken }
+                };
                 if (!string.IsNullOrEmpty(tokens.RefreshToken))
-                {
-                    var authenticationTokenList3 = authenticationTokenList1;
-                    var authenticationToken2 = new AuthenticationToken {Name = "refresh_token"};
-                    var refreshToken = tokens.RefreshToken;
-                    authenticationToken2.Value = refreshToken;
-                    authenticationTokenList3.Add(authenticationToken2);
-                }
+                    authenticationTokenList.Add(new AuthenticationToken { Name = "refresh_token", Value = tokens.RefreshToken });
                 if (!string.IsNullOrEmpty(tokens.TokenType))
-                {
-                    var authenticationTokenList3 = authenticationTokenList1;
-                    var authenticationToken2 = new AuthenticationToken {Name = "token_type"};
-                    var tokenType = tokens.TokenType;
-                    authenticationToken2.Value = tokenType;
-                    authenticationTokenList3.Add(authenticationToken2);
-                }
+                    authenticationTokenList.Add(new AuthenticationToken { Name = "token_type", Value = tokens.TokenType });
                 if (!string.IsNullOrEmpty(tokens.ExpiresIn) && int.TryParse(tokens.ExpiresIn, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result))
                 {
-                    var dateTimeOffset = oauthHandler.Clock.UtcNow + TimeSpan.FromSeconds(result);
-                    var authenticationTokenList3 = authenticationTokenList1;
-                    var authenticationToken2 = new AuthenticationToken {Name = "expires_in"};
-                    var str = dateTimeOffset.ToString("o", CultureInfo.InvariantCulture);
-                    authenticationToken2.Value = str;
-                    authenticationTokenList3.Add(authenticationToken2);
+                    var dateTimeOffset = Clock.UtcNow + TimeSpan.FromSeconds(result);
+                    authenticationTokenList.Add(new AuthenticationToken
+                    {
+                        Name = "expires_at",
+                        Value = dateTimeOffset.ToString("o", CultureInfo.InvariantCulture)
+                    });
                 }
-                properties.StoreTokens(authenticationTokenList1);
+                properties.StoreTokens(authenticationTokenList);
             }
-            var ticketAsync = await oauthHandler.CreateTicketAsync(identity, properties, tokens);
-            return ticketAsync == null ? HandleRequestResult.Fail("Failed to retrieve user information from remote server.") : HandleRequestResult.Success(ticketAsync);
+            var ticketAsync = await CreateTicketAsync(identity, properties, tokens.Response);
+            return ticketAsync == null 
+                ? HandleRequestResult.Fail("Failed to retrieve user information from remote server.") 
+                : HandleRequestResult.Success(ticketAsync);
+        }
+
+        /// <inheritdoc />
+        protected override async Task<OAuthTokenResponse> ExchangeCodeAsync(string code, string redirectUri)
+        {
+            var content = ToJsonContent(new
+            {
+                token = new
+                {
+                    grant_type = "authorization_code",
+                    code,
+                    client_id = Options.ClientId,
+                    client_secret = Options.ClientSecret,
+                    redirect_uri = redirectUri,
+                    scope = string.Join(" ", Options.Scopes)
+                }
+            });
+
+            var response = await Backchannel.SendAsync(new HttpRequestMessage(HttpMethod.Post, Options.TokenEndpoint)
+                {
+                    Headers = { Accept = { new MediaTypeWithQualityHeaderValue("application/json") } },
+                    Content = content
+                },
+                Context.RequestAborted);
+            return response.IsSuccessStatusCode
+                ? OAuthTokenResponse.Success(JObject.Parse(await response.Content.ReadAsStringAsync()))
+                : OAuthTokenResponse.Failed(new Exception("OAuth token endpoint failure: " + await Display(response)));
+        }
+
+        /*
+                protected new async Task<EHealthOAuthTokenResponse> ExchangeCodeAsync(string code, string redirectUri)
+                {
+                    var content = JsonConvert.SerializeObject(new
+                    {
+                        token = new
+                        {
+                            grant_type = "authorization_code",
+                            code,
+                            client_id = Options.ClientId,
+                            client_secret = Options.ClientSecret,
+                            redirect_uri = redirectUri,
+                            scope = string.Join(" ", Options.Scopes)
+                        }
+                    }, Formatting.None);
+                    var urlEncodedContent = new StringContent(content, Encoding.UTF8, "application/json");
+                    var response = await Backchannel.SendAsync(
+                        new HttpRequestMessage(HttpMethod.Post, Options.TokenEndpoint)
+                        {
+                            Headers = { Accept = { new MediaTypeWithQualityHeaderValue("application/json") } },
+                            Content = urlEncodedContent
+                        },
+                        Context.RequestAborted);
+                    return response.IsSuccessStatusCode
+                        ? EHealthOAuthTokenResponse.Success(JObject.Parse(await response.Content.ReadAsStringAsync()))
+                        : EHealthOAuthTokenResponse.Failed(new Exception("OAuth token endpoint failure: " + await Display(response)));
+                }
+        */
+
+        /*
+                protected async Task<AuthenticationTicket> CreateTicketAsync([NotNull] ClaimsIdentity identity,
+                    [NotNull] AuthenticationProperties properties, [NotNull] EHealthOAuthTokenResponse tokens)
+                {
+                    /*
+                                var address = QueryHelpers.AddQueryString(Options.UserInformationEndpoint, "access_token", tokens.AccessToken);
+
+                                if (Options.Scopes.Count != 0)
+                                {
+                                    address = QueryHelpers.AddQueryString(address, "scope", string.Join(" ", Options.Scopes));
+                                }
+
+                                var response = await Backchannel.GetAsync(address, Context.RequestAborted);
+                                if (!response.IsSuccessStatusCode)
+                                {
+                                    Logger.LogError("An error occurred while retrieving the user profile: the remote server " +
+                                                    "returned a {Status} response with the following payload: {Headers} {Body}.",
+                                                    /* Status: #2# response.StatusCode,
+                                                    /* Headers: #2# response.Headers.ToString(),
+                                                    /* Body: #2# await response.Content.ReadAsStringAsync());
+
+                                    throw new HttpRequestException("An error occurred while retrieving the user profile.");
+                                }
+
+                                var container = JObject.Parse(await response.Content.ReadAsStringAsync());
+                                var payload = container["response"].First as JObject;
+                    #1#
+
+                    var payload = tokens.Response.Response;
+                    var principal = new ClaimsPrincipal(identity);
+                    var context = new EHealthOAuthCreatingTicketContext(principal, properties, Context, Scheme, Options, Backchannel, tokens, payload);
+                    context.RunClaimActions(payload);
+
+                    //!!!await Options.Events.CreatingTicket(context);
+                    return await Task.FromResult(new AuthenticationTicket(context.Principal, context.Properties, Scheme.Name));
+                }
+        */
+        /// <inheritdoc />
+        protected override async Task<AuthenticationTicket> CreateTicketAsync([NotNull] ClaimsIdentity identity,
+            [NotNull] AuthenticationProperties properties, [NotNull] OAuthTokenResponse tokens)
+        {
+/*
+            var request = new HttpRequestMessage(HttpMethod.Post, Options.UserInformationEndpoint);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", $"{tokens.AccessToken},Id {Options.ClientId}");
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            request.Content = ToJsonContent(new
+            {
+                type = "physical",
+                fields = new[] { "firstName", "middleName", "lastName", "phone", "inn", "clId", "clIdText", "birthDay", "email", "sex", "resident", "dateModification" }
+            });
+
+            var response = await Backchannel.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, Context.RequestAborted);
+            if (!response.IsSuccessStatusCode)
+            {
+                Logger.LogError("An error occurred while retrieving the user profile: the remote server " +
+                                "returned a {Status} response with the following payload: {Headers} {Body}.",
+                                /* Status: #1# response.StatusCode,
+                                /* Headers: #1# response.Headers.ToString(),
+                                /* Body: #1# await response.Content.ReadAsStringAsync());
+
+                throw new HttpRequestException("An error occurred while retrieving the user profile.");
+            }
+            var payload = JObject.Parse(await response.Content.ReadAsStringAsync());
+*/
+            var payload = tokens.Response; 
+            var principal = new ClaimsPrincipal(identity);
+            var context = new OAuthCreatingTicketContext(principal, properties, Context, Scheme, Options, Backchannel, tokens, payload);
+
+            context.RunClaimActions(payload);
+
+            await Options.Events.CreatingTicket(context);
+            return new AuthenticationTicket(context.Principal, context.Properties, Scheme.Name);
         }
     }
 }

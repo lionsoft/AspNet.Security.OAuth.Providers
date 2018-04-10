@@ -30,17 +30,8 @@ namespace AspNet.Security.OAuth.EHealth
 
             UserInformationEndpoint = EHealthAuthenticationDefaults.UserInformationEndpoint;
 
-
-            /*
-            ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "uid");
-            ClaimActions.MapJsonKey(ClaimTypes.GivenName, "first_name");
-            ClaimActions.MapJsonKey(ClaimTypes.Surname, "last_name");
-            ClaimActions.MapJsonKey(ClaimTypes.Hash, "hash");
-            */
-            ClaimActions.MapJsonKey("ehealth:expires_at", "expires_at");
-            ClaimActions.MapJsonKey("ehealth:id", "id");
-            ClaimActions.MapJsonKey("ehealth:user_id", "user_id");
-            ClaimActions.MapJsonKey("ehealth:access_token", "value");
+            ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "user_id");
+            ClaimActions.MapJsonKey(ClaimTypes.Expiration, "expires_at");
         }
 
         /// <summary>
